@@ -42,8 +42,8 @@ and object management. The following commands sets a random strings for each
 access key.
 
 ```bash
-dokku config:set --no-restart minio MINIO_ACCESS_KEY=$(echo `openssl rand -base64 45` | tr -d \=+ | cut -c 1-20)
-dokku config:set --no-restart minio MINIO_SECRET_KEY=$(echo `openssl rand -base64 45` | tr -d \=+ | cut -c 1-32)
+dokku config:set --no-restart minio MINIO_ROOT_USER=$(echo `openssl rand -base64 45` | tr -d \=+ | cut -c 1-20)
+dokku config:set --no-restart minio MINIO_ROOT_PASSWORD=$(echo `openssl rand -base64 45` | tr -d \=+ | cut -c 1-32)
 ```
 
 To login in the browser or via API, you will need to supply both the
@@ -54,15 +54,14 @@ in on your host running dokku via `dokku config minio`.
 > startup and output them to the log (check if via `dokku logs minio`). You
 > will still need to set them manually.
 
-You'll also need to set other two environment variables:
+You'll also need to set other two configuration variables:
 
-- `NGINX_MAX_REQUEST_BODY`: used in the custom `nginx.conf` for this Dokku app
-  to allow uploads up to 15MB to the HTTP server (if the file size is greater
+- [nginx's `client-max-body-size`](https://dokku.com/docs/configuration/nginx/#specifying-a-custom-client_max_body_size): used to allow uploads up to 15MB to the HTTP server (if the file size is greater
   than 15MB, `s3cmd` will split in 15MB parts).
-- `MINIO_DOMAIN`: used to tell Minio the domain name being used by the server.
+- An app [environment variable](https://dokku.com/docs/configuration/environment-variables/#environment-variables) `MINIO_DOMAIN`: used to tell Minio the domain name being used by the server.
 
 ```bash
-dokku config:set --no-restart minio NGINX_MAX_REQUEST_BODY=15M
+dokku nginx:set minio client-max-body-size 15m
 dokku config:set --no-restart minio MINIO_DOMAIN=minio.example.com
 ```
 
@@ -78,39 +77,21 @@ machine, add write permissions to the user defined in `Dockerfile` and tell
 Dokku to mount it to the app container.
 
 ```bash
-sudo mkdir -p /var/lib/dokku/data/storage/minio
-sudo chown 32769:32769 /var/lib/dokku/data/storage/minio
-dokku storage:mount minio /var/lib/dokku/data/storage/minio:/home/dokku/data
+dokku storage:ensure-directory minio --chown false
+sudo chown 1000:1000 /var/lib/dokku/data/storage/minio
+dokku storage:mount minio /var/lib/dokku/data/storage/minio:/data
 ```
 
 ## Domain setup
 
-To get the routing working, we need to apply a few settings. First we set
-the domain.
+To get the domain working, we need to apply a few settings. The wildcard domain must be setup in DNS for vhost style paths.
+First we set the domain.
 
 ```bash
-dokku domains:set minio minio.example.com
+dokku domains:set minio minio.example.com *.minio.example.com
 ```
 
-The parent Dockerfile, provided by the [Minio
-project](https://github.com/minio/minio), exposes port `9000` for web requests.
-Dokku will set up this port for outside communication, as explained in [its
-documentation](http://dokku.viewdocs.io/dokku/advanced-usage/proxy-management/#proxy-port-mapping).
-Because we want Minio to be available on the default port `80` (or `443` for
-SSL), we need to fiddle around with the proxy settings.
-
-First add the correct port mapping for this project as defined in the parent
-`Dockerfile`.
-
-```bash
-dokku proxy:ports-add minio http:80:9000
-```
-
-Next remove the proxy mapping added by Dokku.
-
-```bash
-dokku proxy:ports-remove minio http:80:5000
-```
+This Dockerfile exposes port `9000` for bucket requests and `9001` for web console.
 
 ## Push Minio to Dokku
 
@@ -118,16 +99,8 @@ dokku proxy:ports-remove minio http:80:5000
 
 First clone this repository onto your machine.
 
-#### Via SSH
-
 ```bash
-git clone git@github.com:slypix/minio-dokku.git
-```
-
-#### Via HTTPS
-
-```bash
-git clone https://github.com/slypix/minio-dokku.git
+git clone https://github.com/rjocoleman/minio-dokku
 ```
 
 ### Set up git remote
